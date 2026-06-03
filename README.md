@@ -12,8 +12,8 @@ Hardware: Cámara web y archivo de video gato.mp4 en el directorio raíz.
 INSTALACIÓN Y CONFIGURACIÓN (BASH)
 Sigue estos pasos para preparar tu entorno de ejecución:
 
-
-1. Crear y activar entorno virtual
+1. CLONA EL REPOSITORIO 
+2. Crear y activar entorno virtual
 Es altamente recomendable usar un entorno virtual para evitar conflictos con otras librerías de Python:
 
 python -m venv .venv
