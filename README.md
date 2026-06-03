@@ -12,7 +12,7 @@ Hardware: Cámara web y archivo de video gato.mp4 en el directorio raíz.
 INSTALACIÓN Y CONFIGURACIÓN (BASH)
 Sigue estos pasos para preparar tu entorno de ejecución:
 
-1. CLONA EL REPOSITORIO 
+1. CLONA EL REPOSITORIO https://github.com/mobbrey/Gesture-recognition.git
 2. Crear y activar entorno virtual
 Es altamente recomendable usar un entorno virtual para evitar conflictos con otras librerías de Python:
 
