@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>GestureDrive</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=Outfit:wght@300;400;500&display=swap" rel="stylesheet"/>
+
+<!-- ── MediaPipe Hands (CDN oficial) ── -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<style>
+:root{
+  --em:#10b981;--sa:#FF7E70;--am:#f59e0b;--sk:#38bdf8;
+  --bg:#080808;--bg2:#0f0f0f;--bg3:#141414;--bd:rgba(255,255,255,0.06);
+  --tx:#e5e5e5;--mu:#555;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--tx);font-family:'Outfit',sans-serif;min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;z-index:0;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+  pointer-events:none}
+::-webkit-scrollbar{width:3px}
+::-webkit-scrollbar-thumb{background:#1e1e1e;border-radius:2px}
+.font-syne{font-family:'Syne',sans-serif}
+.font-mono{font-family:'DM Mono',monospace}
+
+.navbar{position:sticky;top:0;z-index:50;background:rgba(8,8,8,0.92);backdrop-filter:blur(20px);border-bottom:1px solid var(--bd)}
+.logo-glow{text-shadow:0 0 20px rgba(16,185,129,.5),0 0 40px rgba(16,185,129,.2)}
+.card{background:var(--bg2);border:1px solid var(--bd);border-radius:16px}
+
+/* CÁMARA */
+.camera-wrap{position:relative;background:#050505;border-radius:14px;overflow:hidden;border:1px solid var(--bd);aspect-ratio:16/9}
+/* El video está oculto — el canvas es lo que se muestra */
+#video{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+#output-canvas{width:100%;height:100%;display:block;transform:scaleX(-1)}
+.cam-corner{position:absolute;width:18px;height:18px;border-color:var(--em);border-style:solid;opacity:.6}
+.cam-corner.tl{top:10px;left:10px;border-width:2px 0 0 2px;border-radius:3px 0 0 0}
+.cam-corner.tr{top:10px;right:10px;border-width:2px 2px 0 0;border-radius:0 3px 0 0}
+.cam-corner.bl{bottom:10px;left:10px;border-width:0 0 2px 2px;border-radius:0 0 0 3px}
+.cam-corner.br{bottom:10px;right:10px;border-width:0 2px 2px 0;border-radius:0 0 3px 0}
+.scan-line{position:absolute;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--em),transparent);opacity:0;animation:scan 4s ease-in-out infinite}
+@keyframes scan{0%{top:0%;opacity:0}5%{opacity:.35}95%{opacity:.35}100%{top:100%;opacity:0}}
+.cam-overlay{position:absolute;inset:0;background:linear-gradient(to top,rgba(8,8,8,.5) 0%,transparent 35%);pointer-events:none}
+.cam-badge{position:absolute;bottom:12px;left:12px;font-family:'DM Mono',monospace;font-size:.62rem;color:var(--em);letter-spacing:.12em;opacity:.85}
+.rec-dot{display:inline-block;width:5px;height:5px;background:var(--sa);border-radius:50%;margin-right:5px;animation:blink 1.2s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.15}}
+.cam-ph{display:flex;flex-direction:column;align-items:center;justify-content:center;position:absolute;inset:0;gap:10px}
+
+/* GESTO DISPLAY */
+.gesture-icon{font-family:'Syne',sans-serif;font-size:3rem;font-weight:800;transition:all .3s cubic-bezier(.34,1.56,.64,1)}
+.gesture-label{font-family:'DM Mono',monospace;font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;transition:color .3s ease}
+.glow-em{text-shadow:0 0 28px rgba(16,185,129,.8),0 0 56px rgba(16,185,129,.3)}
+.glow-am{text-shadow:0 0 28px rgba(245,158,11,.8),0 0 56px rgba(245,158,11,.3)}
+.glow-sk{text-shadow:0 0 28px rgba(56,189,248,.8),0 0 56px rgba(56,189,248,.3)}
+.glow-sa{text-shadow:0 0 28px rgba(255,126,112,.8),0 0 56px rgba(255,126,112,.3)}
+@keyframes pulse-border{0%{box-shadow:0 0 0 0 rgba(16,185,129,.4)}50%{box-shadow:0 0 0 10px rgba(16,185,129,0)}100%{box-shadow:0 0 0 0 rgba(16,185,129,0)}}
+.pulse-anim{animation:pulse-border .6s ease}
+
+/* BOTONES */
+.ctrl-btn{width:48px;height:48px;border-radius:10px;border:1px solid var(--bd);background:var(--bg3);color:var(--mu);font-size:.95rem;cursor:pointer;transition:all .15s ease;display:flex;align-items:center;justify-content:center;user-select:none}
+.ctrl-btn:hover{border-color:var(--em);color:var(--em);background:rgba(16,185,129,.08)}
+.ctrl-btn.pressed{background:rgba(16,185,129,.15);border-color:var(--em);color:var(--em);transform:scale(.93);box-shadow:0 0 14px rgba(16,185,129,.3)}
+.ctrl-btn.stop-btn:hover,.ctrl-btn.stop-btn.pressed{border-color:var(--sa);color:var(--sa);background:rgba(255,126,112,.1);box-shadow:0 0 14px rgba(255,126,112,.3)}
+
+/* SLIDER */
+.vel-slider{-webkit-appearance:none;width:100%;height:3px;background:linear-gradient(90deg,var(--em) var(--pct,70%),#1e1e1e var(--pct,70%));border-radius:2px;outline:none;cursor:pointer}
+.vel-slider::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--em);box-shadow:0 0 10px rgba(16,185,129,.6);cursor:pointer}
+
+/* TELEMETRÍA */
+.tele-card{background:var(--bg2);border:1px solid var(--bd);border-radius:12px;padding:.9rem 1.1rem;position:relative;overflow:hidden}
+.tele-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(16,185,129,.25),transparent)}
+.tele-value{font-family:'DM Mono',monospace;font-size:1.5rem;font-weight:500;color:var(--em)}
+.tele-label{font-size:.65rem;letter-spacing:.15em;text-transform:uppercase;color:var(--mu);margin-top:2px}
+.tele-bar{height:2px;border-radius:1px;background:#1a1a1a;margin-top:8px;overflow:hidden}
+.tele-bar-fill{height:100%;border-radius:1px;background:var(--em);transition:width .5s ease}
+
+/* CONSOLA */
+.console-wrap{background:#060606;border:1px solid var(--bd);border-radius:12px;font-family:'DM Mono',monospace;font-size:.7rem;overflow-y:auto;max-height:140px;padding:.9rem}
+.log-line{line-height:1.75}
+.log-time{color:#2a2a2a;margin-right:8px}
+.log-info{color:var(--em)}.log-warn{color:var(--am)}.log-error{color:var(--sa)}.log-neutral{color:#3a3a3a}
+
+/* STATUS */
+.status-dot{width:7px;height:7px;border-radius:50%;background:#2a2a2a;transition:all .3s ease}
+.status-dot.connected{background:var(--em);box-shadow:0 0 8px rgba(16,185,129,.7);animation:pdot 2s ease infinite}
+.status-dot.error{background:var(--sa)}
+@keyframes pdot{0%,100%{box-shadow:0 0 4px rgba(16,185,129,.6)}50%{box-shadow:0 0 12px rgba(16,185,129,.9)}}
+
+.connect-btn{font-family:'DM Mono',monospace;font-size:.7rem;letter-spacing:.1em;padding:5px 12px;border-radius:6px;border:1px solid #2a2a2a;background:transparent;color:#555;cursor:pointer;transition:all .2s ease}
+.connect-btn:hover{border-color:var(--em);color:var(--em)}
+.connect-btn.active{border-color:var(--em);background:rgba(16,185,129,.1);color:var(--em)}
+
+.slabel{font-family:'DM Mono',monospace;font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;color:#333}
+.divider{height:1px;background:linear-gradient(90deg,transparent,var(--bd),transparent)}
+
+.fi{animation:fi .6s ease forwards;opacity:0}
+@keyframes fi{to{opacity:1}}
+.d1{animation-delay:.1s}.d2{animation-delay:.2s}.d3{animation-delay:.3s}.d4{animation-delay:.4s}.d5{animation-delay:.5s}
+
+/* GESTURE GUIDE */
+.gg-card{background:var(--bg3);border:1px solid var(--bd);border-radius:10px;padding:.75rem;display:flex;flex-direction:column;align-items:center;gap:.4rem;cursor:pointer;transition:all .2s ease}
+.gg-card:hover{border-color:rgba(255,255,255,.1);background:#1a1a1a}
+.gg-card.active-gg{border-color:var(--em);background:rgba(16,185,129,.07)}
+
+/* LANG */
+.lang-btn{font-family:'DM Mono',monospace;font-size:.68rem;letter-spacing:.08em;padding:4px 9px;border-radius:5px;border:1px solid transparent;background:transparent;color:#444;cursor:pointer;transition:all .15s ease}
+.lang-btn:hover{color:#888}
+.lang-btn.active-lang{border-color:#2a2a2a;color:var(--em);background:rgba(16,185,129,.06)}
+
+/* TABS */
+.tab-btn{font-family:'DM Mono',monospace;font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;padding:5px 12px;border-radius:6px;border:none;background:transparent;color:#444;cursor:pointer;transition:all .2s ease}
+.tab-btn.active-tab{background:rgba(16,185,129,.1);color:var(--em)}
+
+/* MEDIAPIPE BADGE */
+#mp-status{font-family:'DM Mono',monospace;font-size:.62rem;letter-spacing:.1em}
+
+/* CONFIDENCE BAR */
+.conf-bar{height:3px;border-radius:2px;background:#1a1a1a;overflow:hidden;margin-top:4px}
+.conf-fill{height:100%;border-radius:2px;background:var(--em);transition:width .2s ease}
+</style>
+</head>
+<body class="relative z-10">
+
+<!-- ══ NAVBAR ══ -->
+<nav class="navbar px-5 py-3 flex items-center justify-between">
+  <div class="flex items-center gap-3">
+    <svg viewBox="0 0 32 32" fill="none" width="28">
+      <polygon points="16,2 30,26 2,26" fill="none" stroke="#10b981" stroke-width="1.5"/>
+      <polygon points="16,10 24,24 8,24" fill="#10b981" opacity="0.12"/>
+      <circle cx="16" cy="22" r="1.8" fill="#10b981"/>
+    </svg>
+    <span class="font-syne text-lg logo-glow" style="font-weight:800">Gesture<span style="color:var(--em)">Drive</span></span>
+    <span class="font-mono text-xs text-gray-800 hidden sm:block ml-1">v3.0</span>
+  </div>
+  <div class="flex items-center gap-3">
+    <div class="flex items-center gap-1 border border-gray-900 rounded-md px-1 py-0.5">
+      <button class="lang-btn active-lang" onclick="setLang('es')" id="lang-es">ES</button>
+      <button class="lang-btn" onclick="setLang('en')" id="lang-en">EN</button>
+      <button class="lang-btn" onclick="setLang('pt')" id="lang-pt">PT</button>
+    </div>
+    <input id="esp-ip" type="text" placeholder="192.168.4.1"
+      class="font-mono text-xs bg-transparent border border-gray-900 rounded-md px-2.5 py-1.5 text-gray-600 focus:outline-none focus:border-gray-700 w-28 hidden sm:block" value="192.168.4.1"/>
+    <div class="flex items-center gap-2">
+      <div id="status-dot" class="status-dot"></div>
+      <span id="status-text" class="font-mono text-xs text-gray-700">DESCONECTADO</span>
+    </div>
+    <button id="connect-btn" class="connect-btn" onclick="toggleConnect()">CONECTAR</button>
+  </div>
+</nav>
+
+<!-- ══ MAIN ══ -->
+<main class="px-4 sm:px-5 py-4 max-w-screen-xl mx-auto relative z-10">
+
+  <!-- TOP GRID -->
+  <div class="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-4">
+
+    <!-- CÁMARA -->
+    <div class="lg:col-span-3 fi d1">
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center gap-3">
+          <span class="slabel" data-i="cameraInput">Entrada de cámara</span>
+          <span id="mp-status" class="text-gray-700">· MediaPipe OFF</span>
+        </div>
+        <button onclick="startCamera()" id="cam-btn"
+          class="font-mono text-xs text-gray-600 hover:text-green-500 transition-colors">
+          <i class="fa fa-video mr-1"></i><span data-i="startCam">iniciar cám</span>
+        </button>
+      </div>
+
+      <div class="camera-wrap">
+        <!-- Video oculto que MediaPipe necesita -->
+        <video id="video" autoplay playsinline muted></video>
+        <!-- Canvas donde MediaPipe dibuja landmarks + frame -->
+        <canvas id="output-canvas"></canvas>
+
+        <!-- Placeholder inicial -->
+        <div id="cam-ph" class="cam-ph">
+          <i class="fa fa-camera text-3xl" style="color:#181818"></i>
+          <span class="font-mono text-xs" style="color:#242424" data-i="clickToStart">haz clic en "iniciar cám"</span>
+        </div>
+
+        <div class="cam-overlay"></div>
+        <div class="scan-line" id="scan-line" style="display:none"></div>
+        <div class="cam-corner tl"></div><div class="cam-corner tr"></div>
+        <div class="cam-corner bl"></div><div class="cam-corner br"></div>
+        <div class="cam-badge">
+          <span class="rec-dot" id="rec-dot" style="display:none"></span>
+          <span id="cam-status-text">OFFLINE</span>
+          &nbsp;·&nbsp;<span id="cam-res">—</span>
+        </div>
+
+        <!-- Confianza de detección (top-right) -->
+        <div style="position:absolute;top:12px;right:12px;text-align:right">
+          <div class="font-mono text-xs text-gray-700" id="conf-label" style="display:none">CONF</div>
+          <div class="conf-bar" style="width:80px;display:none" id="conf-bar-wrap">
+            <div class="conf-fill" id="conf-fill" style="width:0%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANEL DERECHO -->
+    <div class="lg:col-span-2 flex flex-col gap-3 fi d2">
+
+      <!-- GESTO CARD -->
+      <div class="card p-4 flex flex-col gap-3" id="gesture-card">
+        <div class="flex items-center justify-between">
+          <span class="slabel" data-i="detectedGesture">Gesto detectado</span>
+          <!-- Toggle detección automática -->
+          <label class="flex items-center gap-2 cursor-pointer">
+            <span class="font-mono text-xs text-gray-600" data-i="autoDetect">auto</span>
+            <div class="relative">
+              <input type="checkbox" id="auto-toggle" class="sr-only" checked onchange="toggleAuto(this.checked)"/>
+              <div id="toggle-track" class="w-9 h-5 rounded-full border border-gray-800 bg-gray-900 transition-colors" style="background:rgba(16,185,129,.2);border-color:var(--em)"></div>
+              <div id="toggle-thumb" class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-transform" style="background:var(--em);transform:translateX(16px)"></div>
+            </div>
+          </label>
+        </div>
+
+        <div class="flex flex-col items-center justify-center py-3 gap-1">
+          <div id="gesture-icon" class="gesture-icon" style="color:var(--mu)">—</div>
+          <div id="gesture-name" class="gesture-label" style="color:var(--mu)" data-i="waiting">EN ESPERA</div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- VELOCIDAD -->
+        <div class="flex flex-col gap-2">
+          <div class="flex justify-between">
+            <span class="slabel" data-i="speed">Velocidad</span>
+            <span id="vel-val" class="font-mono text-xs" style="color:var(--em)">70%</span>
+          </div>
+          <input type="range" class="vel-slider" id="vel-slider" min="0" max="100" value="70"
+                 oninput="updateVel(this.value)"/>
+        </div>
+      </div>
+
+      <!-- CONTROL MANUAL -->
+      <div class="card p-4">
+        <span class="slabel block mb-3" data-i="manualControl">Control manual</span>
+        <div class="flex flex-col items-center gap-1.5">
+          <button class="ctrl-btn" id="btn-up"
+            onpointerdown="pressBtn('up')" onpointerup="releaseBtn('up')" onpointerleave="releaseBtn('up')">
+            <i class="fa fa-arrow-up"></i></button>
+          <div class="flex gap-1.5">
+            <button class="ctrl-btn" id="btn-left"
+              onpointerdown="pressBtn('left')" onpointerup="releaseBtn('left')" onpointerleave="releaseBtn('left')">
+              <i class="fa fa-arrow-left"></i></button>
+            <button class="ctrl-btn stop-btn" id="btn-stop"
+              onpointerdown="pressBtn('stop')" onpointerup="releaseBtn('stop')" onpointerleave="releaseBtn('stop')">
+              <i class="fa fa-hand"></i></button>
+            <button class="ctrl-btn" id="btn-right"
+              onpointerdown="pressBtn('right')" onpointerup="releaseBtn('right')" onpointerleave="releaseBtn('right')">
+              <i class="fa fa-arrow-right"></i></button>
+          </div>
+          <button class="ctrl-btn" id="btn-down"
+            onpointerdown="pressBtn('down')" onpointerup="releaseBtn('down')" onpointerleave="releaseBtn('down')">
+            <i class="fa fa-arrow-down"></i></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GUÍA DE GESTOS + LANDMARKS -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 fi d3">
+
+    <!-- GUÍA -->
+    <div class="card p-4">
+      <div class="flex items-center justify-between mb-3">
+        <span class="slabel" data-i="gestureGuide">Guía de gestos</span>
+        <div class="flex gap-1">
+          <button class="tab-btn active-tab" id="tab-visual" onclick="switchTab('visual')" data-i="visual">Visual</button>
+          <button class="tab-btn" id="tab-desc" onclick="switchTab('desc')" data-i="description">Descripción</button>
+        </div>
+      </div>
+
+      <!-- TAB VISUAL -->
+      <div id="tab-visual-content" class="grid grid-cols-5 gap-2">
+        <!-- ADELANTE: 5 dedos arriba -->
+        <div class="gg-card" onclick="demoGesture('adelante')">
+          <svg viewBox="0 0 60 76" width="52" height="66">
+            <ellipse cx="30" cy="58" rx="16" ry="12" fill="rgba(16,185,129,.08)" stroke="rgba(16,185,129,.18)" stroke-width="1"/>
+            <rect x="22" y="62" width="16" height="10" rx="4" fill="rgba(16,185,129,.06)" stroke="rgba(16,185,129,.15)" stroke-width="1"/>
+            <g stroke="var(--em)" stroke-width="2.8" stroke-linecap="round" fill="none">
+              <path d="M18,56 Q14,46 13,36 Q12,28 14,22"/>
+              <path d="M22,52 Q21,40 21,28 Q21,18 21,10"/>
+              <path d="M29,50 Q29,38 29,26 Q29,16 29,8"/>
+              <path d="M36,52 Q37,40 37,28 Q37,18 37,10"/>
+              <path d="M42,54 Q43,44 44,34 Q44,26 44,20"/>
+            </g>
+            <polygon points="29,3 24,11 34,11" fill="var(--em)" opacity=".9"/>
+          </svg>
+          <span class="font-mono text-xs" style="color:var(--em);font-size:.58rem" data-i="forward">ADELANTE</span>
+        </div>
+        <!-- ATRÁS: 5 dedos abajo -->
+        <div class="gg-card" onclick="demoGesture('atras')">
+          <svg viewBox="0 0 60 76" width="52" height="66">
+            <ellipse cx="30" cy="18" rx="16" ry="12" fill="rgba(245,158,11,.08)" stroke="rgba(245,158,11,.18)" stroke-width="1"/>
+            <rect x="22" y="8" width="16" height="10" rx="4" fill="rgba(245,158,11,.06)" stroke="rgba(245,158,11,.15)" stroke-width="1"/>
+            <g stroke="var(--am)" stroke-width="2.8" stroke-linecap="round" fill="none">
+              <path d="M18,20 Q14,30 13,40 Q12,48 14,54"/>
+              <path d="M22,24 Q21,36 21,48 Q21,58 21,66"/>
+              <path d="M29,26 Q29,38 29,50 Q29,60 29,68"/>
+              <path d="M36,24 Q37,36 37,48 Q37,58 37,66"/>
+              <path d="M42,22 Q43,32 44,42 Q44,50 44,56"/>
+            </g>
+            <polygon points="29,73 24,65 34,65" fill="var(--am)" opacity=".9"/>
+          </svg>
+          <span class="font-mono text-xs" style="color:var(--am);font-size:.58rem" data-i="backward">ATRÁS</span>
+        </div>
+        <!-- IZQUIERDA: solo meñique -->
+        <div class="gg-card" onclick="demoGesture('izquierda')">
+          <svg viewBox="0 0 60 76" width="52" height="66">
+            <ellipse cx="30" cy="54" rx="17" ry="13" fill="rgba(56,189,248,.08)" stroke="rgba(56,189,248,.18)" stroke-width="1"/>
+            <rect x="22" y="60" width="16" height="10" rx="4" fill="rgba(56,189,248,.06)" stroke="rgba(56,189,248,.15)" stroke-width="1"/>
+            <g stroke="rgba(56,189,248,.3)" stroke-width="2.2" stroke-linecap="round" fill="none">
+              <path d="M18,54 Q16,50 18,46 Q20,43 22,44"/>
+              <path d="M22,50 Q21,45 22,41 Q23,38 24,40"/>
+              <path d="M29,48 Q29,43 29,39 Q29,36 30,38"/>
+              <path d="M36,50 Q36,45 36,41 Q36,38 37,40"/>
+            </g>
+            <path d="M43,52 Q44,42 44,32 Q44,22 44,14" stroke="var(--sk)" stroke-width="3" stroke-linecap="round" fill="none"/>
+            <circle cx="44" cy="12" r="3.5" fill="var(--sk)" style="filter:drop-shadow(0 0 5px var(--sk))"/>
+            <polygon points="4,38 12,33 12,43" fill="var(--sk)" opacity=".8"/>
+          </svg>
+          <span class="font-mono text-xs" style="color:var(--sk);font-size:.58rem" data-i="left">IZQ</span>
+        </div>
+        <!-- DERECHA: solo índice -->
+        <div class="gg-card" onclick="demoGesture('derecha')">
+          <svg viewBox="0 0 60 76" width="52" height="66">
+            <ellipse cx="30" cy="54" rx="17" ry="13" fill="rgba(56,189,248,.08)" stroke="rgba(56,189,248,.18)" stroke-width="1"/>
+            <rect x="22" y="60" width="16" height="10" rx="4" fill="rgba(56,189,248,.06)" stroke="rgba(56,189,248,.15)" stroke-width="1"/>
+            <g stroke="rgba(56,189,248,.3)" stroke-width="2.2" stroke-linecap="round" fill="none">
+              <path d="M18,54 Q16,50 18,46 Q20,43 22,44"/>
+              <path d="M29,48 Q29,43 29,39 Q29,36 30,38"/>
+              <path d="M36,50 Q36,45 36,41 Q36,38 37,40"/>
+              <path d="M43,52 Q44,47 44,43 Q44,40 44,42"/>
+            </g>
+            <path d="M22,50 Q21,38 21,26 Q21,16 21,10" stroke="var(--sk)" stroke-width="3" stroke-linecap="round" fill="none"/>
+            <circle cx="21" cy="8" r="3.5" fill="var(--sk)" style="filter:drop-shadow(0 0 5px var(--sk))"/>
+            <polygon points="56,38 48,33 48,43" fill="var(--sk)" opacity=".8"/>
+          </svg>
+          <span class="font-mono text-xs" style="color:var(--sk);font-size:.58rem" data-i="right">DER</span>
+        </div>
+        <!-- STOP: puño cerrado -->
+        <div class="gg-card" onclick="demoGesture('stop')">
+          <svg viewBox="0 0 60 76" width="52" height="66">
+            <ellipse cx="30" cy="46" rx="18" ry="20" fill="rgba(255,126,112,.08)" stroke="rgba(255,126,112,.2)" stroke-width="1.2"/>
+            <rect x="20" y="60" width="20" height="11" rx="5" fill="rgba(255,126,112,.06)" stroke="rgba(255,126,112,.15)" stroke-width="1"/>
+            <g stroke="var(--sa)" stroke-width="2.5" stroke-linecap="round" fill="none">
+              <path d="M21,40 Q20,34 22,30 Q24,27 26,30 Q27,34 25,38"/>
+              <path d="M27,38 Q27,32 29,28 Q31,25 33,28 Q34,32 32,37"/>
+              <path d="M34,39 Q34,33 36,29 Q38,26 40,29 Q41,33 39,38"/>
+              <path d="M40,41 Q41,36 43,33 Q45,30 46,33 Q47,37 45,41"/>
+              <path d="M18,46 Q16,40 18,36 Q21,32 24,35 Q26,38 23,42"/>
+            </g>
+            <path d="M20,40 Q30,36 42,41" stroke="rgba(255,126,112,.4)" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+            <g stroke="var(--sa)" stroke-width="1.2" opacity=".45">
+              <line x1="24" y1="14" x2="36" y2="24"/><line x1="36" y1="14" x2="24" y2="24"/>
+            </g>
+            <circle cx="30" cy="19" r="8" fill="none" stroke="var(--sa)" stroke-width=".9" opacity=".3"/>
+          </svg>
+          <span class="font-mono text-xs" style="color:var(--sa);font-size:.58rem">STOP</span>
+        </div>
+      </div>
+
+      <!-- TAB DESC -->
+      <div id="tab-desc-content" style="display:none" class="flex flex-col gap-2">
+        <div class="flex items-center gap-3 p-2.5 rounded-lg" style="background:rgba(16,185,129,.05);border:1px solid rgba(16,185,129,.1)">
+          <span style="font-size:1.2rem">↑</span>
+          <div><div class="font-mono text-xs" style="color:var(--em)" data-i="forward">ADELANTE</div>
+          <div class="text-xs text-gray-600 mt-0.5" data-i="fwdDesc">Los 5 dedos extendidos hacia arriba</div></div>
+        </div>
+        <div class="flex items-center gap-3 p-2.5 rounded-lg" style="background:rgba(245,158,11,.05);border:1px solid rgba(245,158,11,.1)">
+          <span style="font-size:1.2rem">↓</span>
+          <div><div class="font-mono text-xs" style="color:var(--am)" data-i="backward">ATRÁS</div>
+          <div class="text-xs text-gray-600 mt-0.5" data-i="bwdDesc">Los 5 dedos extendidos hacia abajo</div></div>
+        </div>
+        <div class="flex items-center gap-3 p-2.5 rounded-lg" style="background:rgba(56,189,248,.05);border:1px solid rgba(56,189,248,.1)">
+          <span style="font-size:1.2rem">←</span>
+          <div><div class="font-mono text-xs" style="color:var(--sk)" data-i="left">IZQUIERDA</div>
+          <div class="text-xs text-gray-600 mt-0.5" data-i="leftDesc">Solo el meñique extendido, resto cerrado</div></div>
+        </div>
+        <div class="flex items-center gap-3 p-2.5 rounded-lg" style="background:rgba(56,189,248,.05);border:1px solid rgba(56,189,248,.1)">
+          <span style="font-size:1.2rem">→</span>
+          <div><div class="font-mono text-xs" style="color:var(--sk)" data-i="right">DERECHA</div>
+          <div class="text-xs text-gray-600 mt-0.5" data-i="rightDesc">Solo el índice extendido, resto cerrado</div></div>
+        </div>
+        <div class="flex items-center gap-3 p-2.5 rounded-lg" style="background:rgba(255,126,112,.05);border:1px solid rgba(255,126,112,.1)">
+          <span style="font-size:1.2rem">✊</span>
+          <div><div class="font-mono text-xs" style="color:var(--sa)">STOP</div>
+          <div class="text-xs text-gray-600 mt-0.5" data-i="stopDesc">Puño cerrado — todos los dedos doblados</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAPA LANDMARKS -->
+    <div class="card p-4">
+      <div class="flex items-center justify-between mb-3">
+        <span class="slabel" data-i="landmarkMap">Mapa de landmarks</span>
+        <span class="font-mono text-xs text-gray-700" data-i="landmarks21">21 puntos · MediaPipe</span>
+      </div>
+      <div class="flex gap-4 items-start">
+        <div class="flex-shrink-0">
+          <svg viewBox="0 0 120 180" width="120" height="180" style="overflow:visible">
+            <polygon fill="rgba(16,185,129,.04)" stroke="rgba(16,185,129,.15)" stroke-width="1" points="30,140 90,140 95,100 85,75 60,68 35,75 25,100"/>
+            <g stroke="#10b981" stroke-opacity=".4" stroke-width="1.5" fill="none">
+              <line x1="30" y1="140" x2="22" y2="110"/><line x1="22" y1="110" x2="10" y2="90"/><line x1="10" y1="90" x2="6" y2="72"/>
+              <line x1="40" y1="130" x2="36" y2="95"/><line x1="36" y1="95" x2="34" y2="65"/><line x1="34" y1="65" x2="33" y2="42"/><line x1="33" y1="42" x2="32" y2="26"/>
+              <line x1="55" y1="128" x2="53" y2="93"/><line x1="53" y1="93" x2="52" y2="63"/><line x1="52" y1="63" x2="51" y2="42"/><line x1="51" y1="42" x2="51" y2="26"/>
+              <line x1="72" y1="130" x2="71" y2="95"/><line x1="71" y1="95" x2="71" y2="66"/><line x1="71" y1="66" x2="71" y2="46"/><line x1="71" y1="46" x2="72" y2="30"/>
+              <line x1="85" y1="130" x2="87" y2="100"/><line x1="87" y1="100" x2="89" y2="76"/><line x1="89" y1="76" x2="90" y2="58"/><line x1="90" y1="58" x2="91" y2="44"/>
+            </g>
+            <!-- DOTS -->
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 3px rgba(16,185,129,.8))" cx="60" cy="155" r="4"/>
+            <text x="63" y="158" font-size="7" fill="#2a5a3a" font-family="DM Mono,monospace">0</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 3px rgba(16,185,129,.8))" cx="30" cy="140" r="3"/><text x="22" y="138" font-size="6" fill="#2a5a3a" font-family="DM Mono,monospace">1</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 3px rgba(16,185,129,.8))" cx="22" cy="110" r="3"/><text x="14" y="108" font-size="6" fill="#2a5a3a" font-family="DM Mono,monospace">2</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 3px rgba(16,185,129,.8))" cx="10" cy="90" r="3"/><text x="2" y="88" font-size="6" fill="#2a5a3a" font-family="DM Mono,monospace">3</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 5px rgba(16,185,129,1))" cx="6" cy="72" r="4"/><text x="-2" y="70" font-size="6" fill="#10b981" font-family="DM Mono,monospace">4</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 3px rgba(16,185,129,.8))" cx="40" cy="130" r="3"/><text x="42" y="128" font-size="6" fill="#2a5a3a" font-family="DM Mono,monospace">5</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 3px rgba(16,185,129,.8))" cx="36" cy="95" r="3"/><text x="38" y="93" font-size="6" fill="#2a5a3a" font-family="DM Mono,monospace">6</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 3px rgba(16,185,129,.8))" cx="34" cy="65" r="3"/><text x="36" y="63" font-size="6" fill="#2a5a3a" font-family="DM Mono,monospace">7</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 5px rgba(16,185,129,1))" cx="32" cy="26" r="4.5"/><text x="25" y="23" font-size="6" fill="#10b981" font-family="DM Mono,monospace">8</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 3px rgba(16,185,129,.8))" cx="55" cy="128" r="3"/><text x="57" y="126" font-size="6" fill="#2a5a3a" font-family="DM Mono,monospace">9</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 3px rgba(16,185,129,.8))" cx="53" cy="93" r="3"/><text x="55" y="91" font-size="6" fill="#2a5a3a" font-family="DM Mono,monospace">10</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 3px rgba(16,185,129,.8))" cx="52" cy="63" r="3"/><text x="54" y="61" font-size="6" fill="#2a5a3a" font-family="DM Mono,monospace">11</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 5px rgba(16,185,129,1))" cx="51" cy="26" r="4.5"/><text x="53" y="23" font-size="6" fill="#10b981" font-family="DM Mono,monospace">12</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 3px rgba(16,185,129,.8))" cx="72" cy="130" r="3"/><text x="74" y="128" font-size="6" fill="#2a5a3a" font-family="DM Mono,monospace">13</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 3px rgba(16,185,129,.8))" cx="71" cy="95" r="3"/><text x="73" y="93" font-size="6" fill="#2a5a3a" font-family="DM Mono,monospace">14</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 3px rgba(16,185,129,.8))" cx="71" cy="66" r="3"/><text x="73" y="64" font-size="6" fill="#2a5a3a" font-family="DM Mono,monospace">15</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 5px rgba(16,185,129,1))" cx="72" cy="30" r="4.5"/><text x="74" y="27" font-size="6" fill="#10b981" font-family="DM Mono,monospace">16</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 3px rgba(16,185,129,.8))" cx="85" cy="130" r="3"/><text x="87" y="128" font-size="6" fill="#2a5a3a" font-family="DM Mono,monospace">17</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 3px rgba(16,185,129,.8))" cx="87" cy="100" r="3"/><text x="89" y="98" font-size="6" fill="#2a5a3a" font-family="DM Mono,monospace">18</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 3px rgba(16,185,129,.8))" cx="89" cy="76" r="3"/><text x="91" y="74" font-size="6" fill="#2a5a3a" font-family="DM Mono,monospace">19</text>
+            <circle fill="var(--em)" style="filter:drop-shadow(0 0 5px rgba(16,185,129,1))" cx="91" cy="44" r="4.5"/><text x="93" y="41" font-size="6" fill="#10b981" font-family="DM Mono,monospace">20</text>
+          </svg>
+        </div>
+        <div class="flex flex-col gap-2 flex-1 text-xs">
+          <div class="font-mono text-gray-700 mb-1" style="font-size:.6rem;letter-spacing:.1em" data-i="fingersLabel">DEDOS</div>
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full" style="background:var(--em)"></div><span class="text-gray-600" data-i="thumb">Pulgar (1–4)</span></div>
+            <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full" style="background:var(--em)"></div><span class="text-gray-600" data-i="index">Índice (5–8)</span></div>
+            <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full" style="background:var(--em)"></div><span class="text-gray-600" data-i="middle">Medio (9–12)</span></div>
+            <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full" style="background:var(--em)"></div><span class="text-gray-600" data-i="ring">Anular (13–16)</span></div>
+            <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full" style="background:var(--em)"></div><span class="text-gray-600" data-i="pinky">Meñique (17–20)</span></div>
+          </div>
+          <div class="divider my-1"></div>
+          <div class="font-mono text-gray-700 mb-1" style="font-size:.6rem;letter-spacing:.1em" data-i="keyPoints">PUNTOS CLAVE</div>
+          <div class="flex flex-col gap-1.5">
+            <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full" style="background:var(--em);box-shadow:0 0 6px var(--em)"></div><span class="text-gray-600" data-i="fingertips">Yemas (4,8,12,16,20)</span></div>
+            <div class="flex items-center gap-2"><div class="w-1.5 h-1.5 rounded-full" style="background:#2a5a3a"></div><span class="text-gray-600" data-i="joints">Articulaciones</span></div>
+            <div class="flex items-center gap-2"><div class="w-1.5 h-1.5 rounded-full" style="background:#2a5a3a"></div><span class="text-gray-600" data-i="wrist">Muñeca (0)</span></div>
+          </div>
+          <div class="divider my-1"></div>
+          <div class="text-gray-700 leading-relaxed" style="font-size:.65rem" data-i="landmarkDesc">
+            MediaPipe detecta los 21 landmarks en tiempo real. La lógica compara la distancia de cada yema respecto a la muñeca (lm 0) para clasificar el gesto.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TELEMETRÍA -->
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4 fi d4">
+    <div class="tele-card">
+      <div class="tele-value" id="tele-vel">0%</div>
+      <div class="tele-label" data-i="speed">Velocidad</div>
+      <div class="tele-bar"><div class="tele-bar-fill" id="bar-vel" style="width:0%"></div></div>
+    </div>
+    <div class="tele-card">
+      <div class="tele-value" id="tele-cmds" style="color:var(--sk)">0</div>
+      <div class="tele-label" data-i="cmdsSent">Comandos enviados</div>
+      <div class="tele-bar"><div class="tele-bar-fill" id="bar-cmds" style="width:0%;background:var(--sk)"></div></div>
+    </div>
+    <div class="tele-card">
+      <div class="tele-value" id="tele-ping" style="color:var(--am)">—ms</div>
+      <div class="tele-label" data-i="latency">Latencia ESP32</div>
+      <div class="tele-bar"><div class="tele-bar-fill" id="bar-ping" style="width:0%;background:var(--am)"></div></div>
+    </div>
+    <div class="tele-card">
+      <div class="tele-value" id="tele-uptime" style="color:var(--sa)">00:00</div>
+      <div class="tele-label" data-i="uptime">Tiempo activo</div>
+      <div class="tele-bar"><div class="tele-bar-fill" id="bar-uptime" style="width:0%;background:var(--sa)"></div></div>
+    </div>
+  </div>
+
+  <!-- CONSOLA -->
+  <div class="fi d5">
+    <div class="flex items-center justify-between mb-2">
+      <span class="slabel" data-i="eventLog">Consola de eventos</span>
+      <button onclick="clearLogs()" class="font-mono text-xs text-gray-700 hover:text-gray-500 transition-colors" data-i="clear">limpiar</button>
+    </div>
+    <div class="console-wrap" id="console"></div>
+  </div>
+
+</main>
+
+<!-- ══════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════ -->
+<script>
+/* ════════════════════════════════════════
+   I18N
+════════════════════════════════════════ */
+const LANGS={
+  es:{
+    disconnected:'DESCONECTADO',connected:'CONECTADO',connect:'CONECTAR',disconnect:'DESCONECTAR',
+    cameraInput:'Entrada de cámara',startCam:'iniciar cám',clickToStart:'haz clic en "iniciar cám"',
+    detectedGesture:'Gesto detectado',waiting:'EN ESPERA',speed:'Velocidad',manualControl:'Control manual',
+    gestureGuide:'Guía de gestos',visual:'Visual',description:'Descripción',autoDetect:'auto',
+    landmarkMap:'Mapa de landmarks',landmarks21:'21 puntos · MediaPipe',
+    forward:'ADELANTE',backward:'ATRÁS',left:'IZQUIERDA',right:'DERECHA',
+    fwdDesc:'Los 5 dedos extendidos hacia arriba',bwdDesc:'Los 5 dedos extendidos hacia abajo',
+    leftDesc:'Solo el meñique extendido, resto cerrado',rightDesc:'Solo el índice extendido, resto cerrado',
+    stopDesc:'Puño cerrado — todos los dedos doblados',
+    fingersLabel:'DEDOS',thumb:'Pulgar (1–4)',index:'Índice (5–8)',middle:'Medio (9–12)',ring:'Anular (13–16)',pinky:'Meñique (17–20)',
+    keyPoints:'PUNTOS CLAVE',fingertips:'Yemas (4,8,12,16,20)',joints:'Articulaciones',wrist:'Muñeca (0)',
+    landmarkDesc:'MediaPipe detecta los 21 landmarks en tiempo real. La lógica compara la distancia de cada yema respecto a la muñeca (lm 0) para clasificar el gesto.',
+    cmdsSent:'Comandos enviados',latency:'Latencia ESP32',uptime:'Tiempo activo',
+    eventLog:'Consola de eventos',clear:'limpiar',
+  },
+  en:{
+    disconnected:'DISCONNECTED',connected:'CONNECTED',connect:'CONNECT',disconnect:'DISCONNECT',
+    cameraInput:'Camera input',startCam:'start cam',clickToStart:'click "start cam" to begin',
+    detectedGesture:'Detected gesture',waiting:'WAITING',speed:'Speed',manualControl:'Manual control',
+    gestureGuide:'Gesture guide',visual:'Visual',description:'Description',autoDetect:'auto',
+    landmarkMap:'Landmark map',landmarks21:'21 points · MediaPipe',
+    forward:'FORWARD',backward:'BACKWARD',left:'LEFT',right:'RIGHT',
+    fwdDesc:'All 5 fingers extended upward',bwdDesc:'All 5 fingers extended downward',
+    leftDesc:'Only pinky extended, rest closed',rightDesc:'Only index extended, rest closed',
+    stopDesc:'Closed fist — all fingers folded',
+    fingersLabel:'FINGERS',thumb:'Thumb (1–4)',index:'Index (5–8)',middle:'Middle (9–12)',ring:'Ring (13–16)',pinky:'Pinky (17–20)',
+    keyPoints:'KEY POINTS',fingertips:'Fingertips (4,8,12,16,20)',joints:'Joints',wrist:'Wrist (0)',
+    landmarkDesc:'MediaPipe detects 21 landmarks in real time. Logic compares each fingertip distance to the wrist (lm 0) to classify gestures.',
+    cmdsSent:'Commands sent',latency:'ESP32 latency',uptime:'Uptime',
+    eventLog:'Event console',clear:'clear',
+  },
+  pt:{
+    disconnected:'DESCONECTADO',connected:'CONECTADO',connect:'CONECTAR',disconnect:'DESCONECTAR',
+    cameraInput:'Entrada de câmera',startCam:'iniciar câm',clickToStart:'clique em "iniciar câm"',
+    detectedGesture:'Gesto detectado',waiting:'AGUARDANDO',speed:'Velocidade',manualControl:'Controle manual',
+    gestureGuide:'Guia de gestos',visual:'Visual',description:'Descrição',autoDetect:'auto',
+    landmarkMap:'Mapa de landmarks',landmarks21:'21 pontos · MediaPipe',
+    forward:'FRENTE',backward:'RÉ',left:'ESQUERDA',right:'DIREITA',
+    fwdDesc:'Os 5 dedos estendidos para cima',bwdDesc:'Os 5 dedos estendidos para baixo',
+    leftDesc:'Só o mínimo estendido, resto fechado',rightDesc:'Só o indicador estendido, resto fechado',
+    stopDesc:'Punho fechado — todos os dedos dobrados',
+    fingersLabel:'DEDOS',thumb:'Polegar (1–4)',index:'Indicador (5–8)',middle:'Médio (9–12)',ring:'Anelar (13–16)',pinky:'Mínimo (17–20)',
+    keyPoints:'PONTOS-CHAVE',fingertips:'Pontas (4,8,12,16,20)',joints:'Articulações',wrist:'Pulso (0)',
+    landmarkDesc:'MediaPipe detecta 21 landmarks em tempo real. A lógica compara a distância de cada ponta ao pulso (lm 0) para classificar os gestos.',
+    cmdsSent:'Comandos enviados',latency:'Latência ESP32',uptime:'Tempo ativo',
+    eventLog:'Console de eventos',clear:'limpar',
+  }
+};
+let currentLang='es';
+function tr(k){ return LANGS[currentLang][k]||k; }
+function setLang(lang){
+  currentLang=lang;
+  ['es','en','pt'].forEach(l=>document.getElementById('lang-'+l).classList.toggle('active-lang',l===lang));
+  document.querySelectorAll('[data-i]').forEach(el=>{ el.textContent=tr(el.getAttribute('data-i')); });
+  document.getElementById('status-text').textContent=state.connected?tr('connected'):tr('disconnected');
+  document.getElementById('connect-btn').textContent=state.connected?tr('disconnect'):tr('connect');
+  if(!state.currentGesture) document.getElementById('gesture-name').textContent=tr('waiting');
+}
+
+/* ════════════════════════════════════════
+   ESTADO
+════════════════════════════════════════ */
+const state={
+  connected:false, cameraOn:false, autoDetect:true,
+  cmdCount:0, velocity:70,
+  startTime:null, uptimeTimer:null,
+  currentGesture:null, sendInterval:null,
+  lastGestureSent:null, lastSentTime:0,
+  mpReady:false,
+};
+
+/* ════════════════════════════════════════
+   UTILS / LOG
+════════════════════════════════════════ */
+function nowStr(){
+  const d=new Date();
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+}
+function log(msg,type='neutral'){
+  const con=document.getElementById('console');
+  const l=document.createElement('div'); l.className='log-line';
+  l.innerHTML=`<span class="log-time">${nowStr()}</span><span class="log-${type}">${msg}</span>`;
+  con.appendChild(l); con.scrollTop=con.scrollHeight;
+}
+function clearLogs(){ document.getElementById('console').innerHTML=''; log('Console limpiada','neutral'); }
+function getIP(){ return document.getElementById('esp-ip').value.trim()||'192.168.4.1'; }
+
+/* ════════════════════════════════════════
+   CONEXIÓN ESP32
+   Usa /cmd?action=STOP|FORWARD|LEFT|RIGHT
+   igual que el main.py del ESP32
+════════════════════════════════════════ */
+function toggleConnect(){ state.connected?disconnect():connect(); }
+
+async function connect(){
+  const ip=getIP();
+  log(`Conectando a http://${ip} ...`,'warn');
+  try{
+    const t0=performance.now();
+    const res=await fetch(`http://${ip}/ping`,{signal:AbortSignal.timeout(3000)});
+    const ping=Math.round(performance.now()-t0);
+    if(res.ok){ setConnected(true,ping); }
+    else{ log(`HTTP ${res.status} — verifica la IP`,'error'); }
+  }catch(e){
+    log(`Sin respuesta: ${e.message}`,'error');
+    setConnected(false);
+  }
+}
+
+function setConnected(val,ping=0){
+  state.connected=val;
+  const dot=document.getElementById('status-dot');
+  const txt=document.getElementById('status-text');
+  const btn=document.getElementById('connect-btn');
+  if(val){
+    dot.className='status-dot connected';
+    txt.textContent=tr('connected'); txt.style.color='var(--em)';
+    btn.textContent=tr('disconnect'); btn.classList.add('active');
+    updatePing(ping); state.startTime=Date.now(); startUptime();
+    log(`Conectado al ESP32 [${getIP()}] — ping ${ping}ms`,'info');
+  } else {
+    dot.className='status-dot';
+    txt.textContent=tr('disconnected'); txt.style.color='';
+    btn.textContent=tr('connect'); btn.classList.remove('active');
+    stopUptime(); log('Desconectado del ESP32','warn');
+  }
+}
+function disconnect(){ setConnected(false); }
+
+/* ════════════════════════════════════════
+   ENVÍO HTTP — ruta exacta del main.py:
+   GET /cmd?action=FORWARD|STOP|LEFT|RIGHT
+════════════════════════════════════════ */
+const GESTO_A_CMD={
+  adelante:'FORWARD', atras:'BACKWARD',
+  izquierda:'LEFT',   derecha:'RIGHT',
+  stop:'STOP'
+};
+
+// Nota: el main.py solo tiene FORWARD|STOP|LEFT|RIGHT
+// BACKWARD no existe en el main.py subido — lo mapeamos a STOP por seguridad
+// Si quieres BACKWARD, agrega cmd_backward() al main.py
+
+async function enviarCmdESP(accion){
+  if(!state.connected) return;
+  const ip=getIP();
+  try{
+    const t0=performance.now();
+    await fetch(`http://${ip}/cmd?action=${accion}`,{signal:AbortSignal.timeout(600)});
+    updatePing(Math.round(performance.now()-t0));
+    state.cmdCount++; updateCmds();
+  }catch(e){ /* silencioso durante movimiento */ }
+}
+
+/* ════════════════════════════════════════
+   DETECCIÓN DE GESTOS — misma lógica
+   que codigo_gestos.py (Python → JS)
+════════════════════════════════════════ */
+const UMBRAL=0.25;
+
+function dist(a,b){
+  return Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2);
+}
+function cerca(a,b){ return dist(a,b)<UMBRAL; }
+
+function detectarGesto(lm){
+  const muneca=lm[0];
+
+  // Dedos cerrados = yema cerca de muñeca
+  const indiceCerrado  = cerca(lm[8],  muneca);
+  const medioCerrado   = cerca(lm[12], muneca);
+  const anularCerrado  = cerca(lm[16], muneca);
+  const meniqueCerrado = cerca(lm[20], muneca);
+
+  // Palma abierta: todas las yemas por encima de sus bases (y menor = más arriba)
+  const palmaPares=[[8,6],[12,10],[16,14],[20,18]];
+  const palmaAbierta=palmaPares.every(([p,b])=>lm[p].y < lm[b].y);
+
+  // PUÑO: todos cerrados → STOP
+  if(indiceCerrado && medioCerrado && anularCerrado && meniqueCerrado)
+    return 'stop';
+
+  // PALMA: todos abiertos → ADELANTE
+  if(palmaAbierta)
+    return 'adelante';
+
+  // MEÑIQUE solo → IZQUIERDA
+  if(!meniqueCerrado && indiceCerrado && medioCerrado && anularCerrado)
+    return 'izquierda';
+
+  // ÍNDICE solo → DERECHA
+  if(!indiceCerrado && medioCerrado && anularCerrado && meniqueCerrado)
+    return 'derecha';
+
+  return null;
+}
+
+/* ════════════════════════════════════════
+   MEDIAPIPE HANDS — inicialización real
+════════════════════════════════════════ */
+let mpHands=null;
+let mpCamera=null;
+const outputCanvas=document.getElementById('output-canvas');
+const outputCtx=outputCanvas.getContext('2d');
+
+function initMediaPipe(){
+  document.getElementById('mp-status').textContent='· Cargando MediaPipe...';
+  document.getElementById('mp-status').style.color='var(--am)';
+
+  mpHands=new Hands({
+    locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+  });
+
+  mpHands.setOptions({
+    maxNumHands:1,
+    modelComplexity:1,
+    minDetectionConfidence:0.8,
+    minTrackingConfidence:0.8,
+  });
+
+  mpHands.onResults(onResults);
+  log('MediaPipe Hands cargado','info');
+  document.getElementById('mp-status').textContent='· MediaPipe ON';
+  document.getElementById('mp-status').style.color='var(--em)';
+  state.mpReady=true;
+}
+
+/* ── Callback de cada frame ── */
+function onResults(results){
+  const video=document.getElementById('video');
+
+  // Ajustar canvas al tamaño real del video
+  if(outputCanvas.width!==video.videoWidth){
+    outputCanvas.width=video.videoWidth;
+    outputCanvas.height=video.videoHeight;
+  }
+
+  outputCtx.save();
+  outputCtx.clearRect(0,0,outputCanvas.width,outputCanvas.height);
+
+  // Dibujar frame de video
+  outputCtx.drawImage(results.image,0,0,outputCanvas.width,outputCanvas.height);
+
+  let gesto=null;
+  let conf=0;
+
+  if(results.multiHandLandmarks && results.multiHandLandmarks.length>0){
+    const lm=results.multiHandLandmarks[0];
+    conf=results.multiHandedness?.[0]?.score||0;
+
+    // Dibujar esqueleto con colores premium
+    drawConnectors(outputCtx,lm,HAND_CONNECTIONS,{color:'rgba(16,185,129,0.5)',lineWidth:2});
+    drawLandmarks(outputCtx,lm,{
+      color:'rgba(16,185,129,0.9)',
+      fillColor:'rgba(16,185,129,0.3)',
+      lineWidth:1,radius:4
+    });
+
+    // Resaltar yemas
+    [4,8,12,16,20].forEach(i=>{
+      const p=lm[i];
+      const x=p.x*outputCanvas.width;
+      const y=p.y*outputCanvas.height;
+      outputCtx.beginPath();
+      outputCtx.arc(x,y,6,0,Math.PI*2);
+      outputCtx.fillStyle='rgba(16,185,129,1)';
+      outputCtx.shadowColor='rgba(16,185,129,0.9)';
+      outputCtx.shadowBlur=10;
+      outputCtx.fill();
+      outputCtx.shadowBlur=0;
+    });
+
+    // Clasificar gesto
+    gesto=detectarGesto(lm);
+
+    // Mostrar etiqueta en el frame
+    if(gesto){
+      const COLORES={adelante:'#10b981',atras:'#f59e0b',izquierda:'#38bdf8',derecha:'#38bdf8',stop:'#FF7E70'};
+      const ETIQ={adelante:'FORWARD',atras:'BACKWARD',izquierda:'LEFT',derecha:'RIGHT',stop:'STOP'};
+      const col=COLORES[gesto]||'#fff';
+      outputCtx.font='bold 22px DM Mono, monospace';
+      outputCtx.fillStyle=col;
+      outputCtx.shadowColor=col;
+      outputCtx.shadowBlur=12;
+      outputCtx.fillText(ETIQ[gesto], 16, outputCanvas.height-16);
+      outputCtx.shadowBlur=0;
+    }
+  }
+
+  outputCtx.restore();
+
+  // Actualizar barra de confianza
+  const pct=Math.round(conf*100);
+  document.getElementById('conf-fill').style.width=pct+'%';
+
+  // Procesar gesto detectado
+  if(state.autoDetect) procesarGesto(gesto);
+}
+
+/* ════════════════════════════════════════
+   PROCESAR GESTO (anti-repetición)
+════════════════════════════════════════ */
+const INTERVALO_MIN=300; // ms
+
+function procesarGesto(gesto){
+  if(!gesto){ clearGesture(); return; }
+  const ahora=Date.now();
+  const cmd=GESTO_A_CMD[gesto];
+  if(!cmd) return;
+
+  // Si el gesto cambió → actualizar UI y enviar inmediato
+  if(gesto!==state.lastGestureSent){
+    setGesture(gesto);
+    state.lastGestureSent=gesto;
+    state.lastSentTime=ahora;
+    enviarCmdESP(cmd);
+    // Envío continuo cada 300ms mientras persiste
+    clearInterval(state.sendInterval);
+    state.sendInterval=setInterval(()=>enviarCmdESP(cmd), INTERVALO_MIN);
+  }
+}
+
+/* ════════════════════════════════════════
+   CÁMARA
+════════════════════════════════════════ */
+async function startCamera(){
+  try{
+    const video=document.getElementById('video');
+    const stream=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480}});
+    video.srcObject=stream;
+
+    await new Promise(res=>{ video.onloadedmetadata=res; });
+    await video.play();
+
+    document.getElementById('cam-res').textContent=`${video.videoWidth}×${video.videoHeight}`;
+    document.getElementById('cam-ph').style.display='none';
+    document.getElementById('scan-line').style.display='block';
+    document.getElementById('rec-dot').style.display='inline-block';
+    document.getElementById('cam-status-text').textContent='LIVE';
+    document.getElementById('conf-label').style.display='block';
+    document.getElementById('conf-bar-wrap').style.display='block';
+    state.cameraOn=true;
+    log('Cámara iniciada correctamente','info');
+
+    // Inicializar MediaPipe si aún no se hizo
+    if(!state.mpReady) initMediaPipe();
+
+    // Usar Camera helper de MediaPipe
+    mpCamera=new Camera(video,{
+      onFrame:async()=>{ await mpHands.send({image:video}); },
+      width:640, height:480
+    });
+    mpCamera.start();
+    log('MediaPipe procesando frames en tiempo real','info');
+
+  }catch(e){
+    log(`Error de cámara: ${e.message}`,'error');
+  }
+}
+
+/* ════════════════════════════════════════
+   UI DE GESTO
+════════════════════════════════════════ */
+const GESTURES={
+  adelante:{icon:'↑',label:'forward',color:'var(--em)',glow:'glow-em'},
+  atras:   {icon:'↓',label:'backward',color:'var(--am)',glow:'glow-am'},
+  izquierda:{icon:'←',label:'left',  color:'var(--sk)',glow:'glow-sk'},
+  derecha: {icon:'→',label:'right',  color:'var(--sk)',glow:'glow-sk'},
+  stop:    {icon:'✊',label:'STOP',  color:'var(--sa)',glow:'glow-sa'},
+};
+
+function setGesture(key){
+  if(state.currentGesture===key) return;
+  state.currentGesture=key;
+  const g=GESTURES[key];
+  const iconEl=document.getElementById('gesture-icon');
+  const nameEl=document.getElementById('gesture-name');
+  const card=document.getElementById('gesture-card');
+  iconEl.className='gesture-icon';
+  iconEl.textContent=g.icon;
+  iconEl.style.color=g.color;
+  iconEl.classList.add(g.glow);
+  nameEl.textContent=key==='stop'?'STOP':tr(g.label);
+  nameEl.style.color=g.color;
+  card.classList.remove('pulse-anim'); void card.offsetWidth; card.classList.add('pulse-anim');
+  // highlight guía
+  document.querySelectorAll('.gg-card').forEach(c=>c.classList.remove('active-gg'));
+  const idx={adelante:0,atras:1,izquierda:2,derecha:3,stop:4};
+  document.querySelectorAll('.gg-card')[idx[key]]?.classList.add('active-gg');
+}
+
+function clearGesture(){
+  if(!state.currentGesture) return;
+  state.currentGesture=null;
+  state.lastGestureSent=null;
+  clearInterval(state.sendInterval);
+  enviarCmdESP('STOP');
+  const iconEl=document.getElementById('gesture-icon');
+  const nameEl=document.getElementById('gesture-name');
+  iconEl.className='gesture-icon';
+  iconEl.textContent='—'; iconEl.style.color='var(--mu)';
+  nameEl.textContent=tr('waiting'); nameEl.style.color='';
+  document.querySelectorAll('.gg-card').forEach(c=>c.classList.remove('active-gg'));
+}
+
+function demoGesture(key){
+  setGesture(key);
+  setTimeout(()=>{
+    state.currentGesture=null;
+    state.lastGestureSent=null;
+    document.getElementById('gesture-icon').textContent='—';
+    document.getElementById('gesture-icon').style.color='var(--mu)';
+    document.getElementById('gesture-name').textContent=tr('waiting');
+    document.getElementById('gesture-name').style.color='';
+    document.querySelectorAll('.gg-card').forEach(c=>c.classList.remove('active-gg'));
+  },1500);
+}
+
+/* ════════════════════════════════════════
+   AUTO DETECT TOGGLE
+════════════════════════════════════════ */
+function toggleAuto(on){
+  state.autoDetect=on;
+  const track=document.getElementById('toggle-track');
+  const thumb=document.getElementById('toggle-thumb');
+  if(on){
+    track.style.background='rgba(16,185,129,.2)';
+    track.style.borderColor='var(--em)';
+    thumb.style.transform='translateX(16px)';
+    thumb.style.background='var(--em)';
+    log('Detección automática activada','info');
+  } else {
+    track.style.background='rgba(255,255,255,.04)';
+    track.style.borderColor='#333';
+    thumb.style.transform='translateX(0)';
+    thumb.style.background='#444';
+    clearGesture();
+    log('Detección automática desactivada','warn');
+  }
+}
+
+/* ════════════════════════════════════════
+   TECLADO
+════════════════════════════════════════ */
+const keyMap={
+  'ArrowUp':'adelante','w':'adelante',
+  'ArrowDown':'atras','x':'atras',
+  'ArrowLeft':'izquierda','a':'izquierda',
+  'ArrowRight':'derecha','d':'derecha',
+  ' ':'stop','s':'stop'
+};
+const held={};
+document.addEventListener('keydown',e=>{
+  const g=keyMap[e.key]; if(!g||held[e.key]) return;
+  held[e.key]=true;
+  setGesture(g);
+  enviarCmdESP(GESTO_A_CMD[g]);
+  clearInterval(state.sendInterval);
+  state.sendInterval=setInterval(()=>enviarCmdESP(GESTO_A_CMD[g]),300);
+  const m={adelante:'up',atras:'down',izquierda:'left',derecha:'right',stop:'stop'};
+  document.getElementById('btn-'+m[g])?.classList.add('pressed');
+});
+document.addEventListener('keyup',e=>{
+  const g=keyMap[e.key]; if(!g) return;
+  held[e.key]=false;
+  clearInterval(state.sendInterval);
+  clearGesture();
+  ['up','down','left','right','stop'].forEach(id=>document.getElementById('btn-'+id)?.classList.remove('pressed'));
+});
+
+/* ════════════════════════════════════════
+   BOTONES MANUALES
+════════════════════════════════════════ */
+const btnMap={up:'adelante',down:'atras',left:'izquierda',right:'derecha',stop:'stop'};
+function pressBtn(id){
+  document.getElementById('btn-'+id).classList.add('pressed');
+  const g=btnMap[id];
+  setGesture(g);
+  enviarCmdESP(GESTO_A_CMD[g]);
+  clearInterval(state.sendInterval);
+  state.sendInterval=setInterval(()=>enviarCmdESP(GESTO_A_CMD[g]),300);
+}
+function releaseBtn(id){
+  document.getElementById('btn-'+id).classList.remove('pressed');
+  clearInterval(state.sendInterval);
+  clearGesture();
+}
+
+/* ════════════════════════════════════════
+   VELOCIDAD
+════════════════════════════════════════ */
+function updateVel(v){
+  state.velocity=parseInt(v);
+  document.getElementById('vel-val').textContent=v+'%';
+  document.getElementById('vel-slider').style.setProperty('--pct',v+'%');
+  document.getElementById('tele-vel').textContent=v+'%';
+  document.getElementById('bar-vel').style.width=v+'%';
+  // El main.py no tiene ruta /vel — se puede agregar después
+}
+
+/* ════════════════════════════════════════
+   TELEMETRÍA
+════════════════════════════════════════ */
+function updatePing(ms){
+  document.getElementById('tele-ping').textContent=ms+'ms';
+  document.getElementById('bar-ping').style.width=Math.max(0,100-ms/5)+'%';
+}
+function updateCmds(){
+  const n=state.cmdCount;
+  document.getElementById('tele-cmds').textContent=n;
+  document.getElementById('bar-cmds').style.width=Math.min(100,n/2)+'%';
+}
+function startUptime(){
+  stopUptime();
+  state.uptimeTimer=setInterval(()=>{
+    const s=Math.floor((Date.now()-state.startTime)/1000);
+    document.getElementById('tele-uptime').textContent=
+      `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+    document.getElementById('bar-uptime').style.width=Math.min(100,(s/600)*100)+'%';
+  },1000);
+}
+function stopUptime(){
+  clearInterval(state.uptimeTimer);
+  document.getElementById('tele-uptime').textContent='00:00';
+  document.getElementById('bar-uptime').style.width='0%';
+}
+
+/* ════════════════════════════════════════
+   TABS
+════════════════════════════════════════ */
+function switchTab(tab){
+  ['visual','desc'].forEach(t=>{
+    document.getElementById('tab-'+t+'-content').style.display=t===tab?'':'none';
+    document.getElementById('tab-'+t).classList.toggle('active-tab',t===tab);
+  });
+}
+
+/* ════════════════════════════════════════
+   INIT
+════════════════════════════════════════ */
+document.getElementById('vel-slider').style.setProperty('--pct','70%');
+log('GestureDrive v3.0 — MediaPipe Hands integrado','info');
+log('1. Conecta el PC al WiFi "RobotESP32" (clave: 12345678)','neutral');
+log('2. Haz clic en CONECTAR (IP: 192.168.4.1)','neutral');
+log('3. Haz clic en "iniciar cám" para activar MediaPipe','neutral');
+log('O usa WASD / flechas para control manual','neutral');
+</script>
+</body>
+</html>
